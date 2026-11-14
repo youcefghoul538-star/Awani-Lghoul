@@ -5,7 +5,7 @@ import { useSettings } from '../state/hooks'
 import { adminLogin, adminLogout, useAdminAuth } from './auth'
 import { SUPABASE_CONFIGURED } from '../data/config'
 import { requireSupabase } from '../lib/supabase'
-import { adminUrl } from './base'
+import { ADMIN_BASE, adminUrl } from './base'
 import { countNewOrders, countNewQuotes } from './remote/repo'
 import RemoteBundles from './pages/RemoteBundles'
 import RemoteCustomers from './pages/RemoteCustomers'
@@ -155,8 +155,22 @@ export default function AdminApp() {
     document.head.appendChild(meta)
     const title = document.title
     document.title = 'Administration'
+    // installable app: manifest + service worker live inside the secret path (see vite.config.ts)
+    const manifest = document.createElement('link')
+    manifest.rel = 'manifest'
+    manifest.href = `${ADMIN_BASE}/manifest.webmanifest`
+    document.head.appendChild(manifest)
+    const touch = document.createElement('link')
+    touch.rel = 'apple-touch-icon'
+    touch.href = '/admin-icon-192.png'
+    document.head.appendChild(touch)
+    if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.register(`${ADMIN_BASE}/sw.js`, { scope: `${ADMIN_BASE}/` }).catch(() => {})
+    }
     return () => {
       meta.remove()
+      manifest.remove()
+      touch.remove()
       document.title = title
     }
   }, [])
