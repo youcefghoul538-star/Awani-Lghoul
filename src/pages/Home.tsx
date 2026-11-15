@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { BundleCard } from '../components/BundleCard'
 import { ProductCard } from '../components/ProductCard'
+import { TrustBar } from '../components/TrustBar'
 import { useI18n } from '../i18n'
 import { filterProducts, type SortKey } from '../lib/search'
 import { useCatalog, useMode } from '../state/hooks'
@@ -55,6 +56,7 @@ export default function Home() {
 
   return (
     <>
+      {!filtersActive && <TrustBar productCount={activeProducts.length} />}
       {!filtersActive && featured.length > 0 && (
         <section className="section" aria-labelledby="h-featured">
           <div className="section__head">
