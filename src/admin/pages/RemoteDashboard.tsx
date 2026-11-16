@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type FormEvent, type SetStateAction } from 'react'
 import { Link } from 'react-router-dom'
 import { NOT_ENOUGH_DATA, round2 } from '../../domain'
 import { dayKey, inPeriod, lastDayKeys, type Period } from '../../domain/time'
@@ -37,19 +37,48 @@ function saveTasks(t: Task[]) {
   try { localStorage.setItem(TASKS_KEY, JSON.stringify(t)) } catch { /* private mode: tasks stay in memory only */ }
 }
 
-function Ring({ value, goal, label, hint, to }: { value: number; goal: number; label: string; hint: string; to: string }) {
-  const pct = goal <= 0 ? 0 : Math.min(100, Math.round((value / goal) * 100))
+/** Counts from 0 to `target` (ease-out). Respects « réduire les animations ». */
+function useCountUp(target: number, ms = 1000): number {
+  const [v, setV] = useState(0)
+  const last = useRef(0)
+  useEffect(() => {
+    if (!Number.isFinite(target)) return
+    if (typeof window === 'undefined' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { last.current = target; setV(target); return }
+    let raf = 0
+    const start = performance.now()
+    const from = last.current
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / ms)
+      const next = from + (target - from) * (1 - Math.pow(1 - t, 3))
+      last.current = next
+      setV(next)
+      if (t < 1) raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [target, ms])
+  return v
+}
+function Count({ to, format }: { to: number; format?: (n: number) => string }) {
+  const v = useCountUp(to)
+  return <>{format ? format(Math.round(v)) : Math.round(v)}</>
+}
+const rise = (i: number) => ({ '--i': i }) as CSSProperties
+
+function Ring({ value, goal, label, hint, to, style }: { value: number; goal: number; label: string; hint: string; to: string; style?: CSSProperties }) {
+  const target = goal <= 0 ? 0 : Math.min(100, (value / goal) * 100)
+  const pct = useCountUp(target, 1100)
   const R = 34
   const C = 2 * Math.PI * R
   return (
-    <Link to={to} className="g-ring" onClick={to.startsWith('#') ? (e) => { e.preventDefault(); document.querySelector(to)?.scrollIntoView({ behavior: 'smooth' }) } : undefined} aria-label={`${label}: ${value} sur ${goal}`}>
+    <Link to={to} className="g-ring g-in" onClick={to.startsWith('#') ? (e) => { e.preventDefault(); document.querySelector(to)?.scrollIntoView({ behavior: 'smooth' }) } : undefined} style={style} aria-label={`${label}: ${value} sur ${goal}`}>
       <svg viewBox="0 0 80 80" width="84" height="84" aria-hidden="true">
         <circle cx="40" cy="40" r={R} className="g-ring__bg" />
         <circle cx="40" cy="40" r={R} className="g-ring__fg" strokeDasharray={`${(C * pct) / 100} ${C}`} transform="rotate(-90 40 40)" />
-        <text x="40" y="45" textAnchor="middle" className="g-ring__txt">{pct}%</text>
+        <text x="40" y="45" textAnchor="middle" className="g-ring__txt">{Math.round(pct)}%</text>
       </svg>
       <strong>{label}</strong>
-      <small>{value} / {goal}</small>
+      <small><Count to={value} /> / {goal}</small>
       <em>{hint}</em>
     </Link>
   )
@@ -71,7 +100,7 @@ function MyTasks({ tasks, setTasks }: { tasks: Task[]; setTasks: Dispatch<SetSta
   }
   const left = tasks.filter((t) => !t.done).length
   return (
-    <section className="card g-card" id="mes-taches">
+    <section className="card g-card g-in" id="mes-taches" style={rise(8)}>
       <div className="g-card__head">
         <h2>Mes tâches</h2>
         <span className="g-chip">{left} à faire</span>
@@ -170,7 +199,7 @@ export default function RemoteDashboard() {
 
   return (
     <>
-      <header className="g-hero">
+      <header className="g-hero g-in" style={rise(0)}>
         <div>
           <p className="g-hero__date">{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
           <h1>{greeting()} 👋</h1>
@@ -187,30 +216,30 @@ export default function RemoteDashboard() {
 
       <section className="g-big" aria-label="Objectifs principaux">
         <div className="g-big__card">
-          <Ring value={doneTasks} goal={Math.max(1, tasks.length)} label="Objectif : mes tâches" hint={doneTasks >= tasks.length && tasks.length > 0 ? 'Bravo, tout est fait ✅' : 'Cochez vos tâches ci-dessous'} to="#mes-taches" />
+          <Ring style={rise(3)} value={doneTasks} goal={Math.max(1, tasks.length)} label="Objectif : mes tâches" hint={doneTasks >= tasks.length && tasks.length > 0 ? 'Bravo, tout est fait ✅' : 'Cochez vos tâches ci-dessous'} to="#mes-taches" />
         </div>
-        <div className="g-big__card g-money">
+        <div className="g-big__card g-money g-in" style={rise(2)}>
           <span className="g-money__tag">🎯 Premier objectif</span>
           <strong className="g-money__title">Les premiers 100 millions de centimes</strong>
-          <p className="g-money__amount"><b>{fmt(Math.min(stats.salesAll, GOALS.revenue))}</b> <span>sur {fmt(GOALS.revenue)}</span></p>
+          <p className="g-money__amount"><b><Count to={Math.min(stats.salesAll, GOALS.revenue)} format={fmt} /></b> <span>sur {fmt(GOALS.revenue)}</span></p>
           <div className="g-bar" role="progressbar" aria-valuemin={0} aria-valuemax={GOALS.revenue} aria-valuenow={Math.min(stats.salesAll, GOALS.revenue)} aria-label="Progression vers 1 000 000 DA de ventes livrées">
-            <i style={{ width: `${Math.min(100, (stats.salesAll / GOALS.revenue) * 100)}%` }} />
+            <i style={{ width: `${Math.min(100, (stats.salesAll / GOALS.revenue) * 100)}%` }} className="g-bar__fill" />
           </div>
           <small>{stats.salesAll >= GOALS.revenue ? 'Objectif atteint, félicitations !' : `Encore ${fmt(GOALS.revenue - stats.salesAll)} de ventes livrées · ${((stats.salesAll / GOALS.revenue) * 100).toFixed(1)} %`}</small>
         </div>
       </section>
 
       <section className="g-goals" aria-label="Objectifs de lancement">
-        <Ring value={stats.withPhoto} goal={GOALS.photos} label="Produits photographiés" hint="Ajouter des photos" to={adminUrl('produits')} />
-        <Ring value={stats.liveCount} goal={GOALS.live} label="Produits en ligne" hint="Activer les essentiels" to={adminUrl('produits')} />
-        <Ring value={stats.catActive} goal={Math.max(1, stats.catTotal)} label="Catégories actives" hint="Après les photos" to={adminUrl('categories')} />
-        <Ring value={stats.traderCount} goal={GOALS.traders} label="Commerçants ajoutés" hint="Liste de prospects" to={adminUrl('commercants')} />
-        <Ring value={stats.traderActive} goal={GOALS.activeTraders} label="Commerçants actifs" hint="Premiers clients gros" to={adminUrl('commercants')} />
+        <Ring style={rise(4)} value={stats.withPhoto} goal={GOALS.photos} label="Produits photographiés" hint="Ajouter des photos" to={adminUrl('produits')} />
+        <Ring style={rise(5)} value={stats.liveCount} goal={GOALS.live} label="Produits en ligne" hint="Activer les essentiels" to={adminUrl('produits')} />
+        <Ring style={rise(6)} value={stats.catActive} goal={Math.max(1, stats.catTotal)} label="Catégories actives" hint="Après les photos" to={adminUrl('categories')} />
+        <Ring style={rise(7)} value={stats.traderCount} goal={GOALS.traders} label="Commerçants ajoutés" hint="Liste de prospects" to={adminUrl('commercants')} />
+        <Ring style={rise(8)} value={stats.traderActive} goal={GOALS.activeTraders} label="Commerçants actifs" hint="Premiers clients gros" to={adminUrl('commercants')} />
       </section>
 
       <div className="a-cols">
         <MyTasks tasks={tasks} setTasks={setTasks} />
-        <section className="card g-card">
+        <section className="card g-card g-in" style={rise(9)}>
           <div className="g-card__head"><h2>À traiter maintenant</h2></div>
           <ul className="g-todo">
             <li><Link to={adminUrl('commandes')}><span>Nouvelles demandes de commande</span><b>{stats.newCount}</b></Link></li>
@@ -232,39 +261,39 @@ export default function RemoteDashboard() {
         <small className="muted">Jours calculés en heure d’Alger · 300 dernières commandes prises en compte.</small>
       </div>
       <div className="kpis">
-        <Link to={adminUrl('commandes')} className="kpi">
+        <Link to={adminUrl('commandes')} className="kpi g-in" style={rise(10)}>
           <span>Demandes à confirmer</span>
-          <strong>{stats.newCount}</strong>
+          <strong><Count to={stats.newCount} /></strong>
           <small>{fmt(stats.newValue)} · stock non déduit tant qu’elles ne sont pas confirmées</small>
         </Link>
-        <div className="kpi">
+        <div className="kpi g-in" style={rise(11)}>
           <span>Commandes confirmées / expédiées</span>
-          <strong>{stats.openCount}</strong>
+          <strong><Count to={stats.openCount} /></strong>
           <small>{fmt(stats.openValue)} · {stats.cancelled} annulée(s)</small>
         </div>
-        <div className="kpi">
+        <div className="kpi g-in" style={rise(12)}>
           <span>Ventes livrées</span>
-          <strong>{fmt(stats.sales)}</strong>
+          <strong><Count to={stats.sales} format={fmt} /></strong>
           <small>{stats.deliveredCount} commande(s) livrée(s)</small>
         </div>
-        <div className="kpi">
+        <div className="kpi g-in" style={rise(13)}>
           <span>Marge brute</span>
-          <strong>{stats.gp == null ? NOT_ENOUGH_DATA : fmt(stats.gp)}</strong>
+          <strong>{stats.gp == null ? NOT_ENOUGH_DATA : <Count to={stats.gp} format={fmt} />}</strong>
           <small>{stats.gp == null ? 'coûts d’achat manquants (réceptionnez vos achats)' : stats.margin == null ? '' : `${stats.margin.toFixed(1)} % des ventes`} · avant charges</small>
         </div>
-        <div className="kpi">
+        <div className="kpi g-in" style={rise(14)}>
           <span>Bénéfice net</span>
-          <strong>{stats.net == null ? NOT_ENOUGH_DATA : fmt(stats.net)}</strong>
+          <strong>{stats.net == null ? NOT_ENOUGH_DATA : <Count to={stats.net} format={fmt} />}</strong>
           <small>{stats.net == null ? 'marge brute ou charges manquantes' : 'marge brute − charges saisies'}</small>
         </div>
-        <Link to={adminUrl('devis')} className="kpi kpi--ws">
+        <Link to={adminUrl('devis')} className="kpi kpi--ws g-in" style={rise(15)}>
           <span>Demandes de devis</span>
-          <strong>{stats.totalQuotes}</strong>
+          <strong><Count to={stats.totalQuotes} /></strong>
           <small>{stats.newQuotes} à traiter</small>
         </Link>
-        <Link to={adminUrl('produits')} className="kpi">
+        <Link to={adminUrl('produits')} className="kpi g-in" style={rise(16)}>
           <span>Alertes stock</span>
-          <strong>{stats.low.length + stats.out.length}</strong>
+          <strong><Count to={stats.low.length + stats.out.length} /></strong>
           <small>{stats.out.length} rupture(s) · {stats.low.length} faible(s)</small>
         </Link>
       </div>
