@@ -1,15 +1,103 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { NOT_ENOUGH_DATA, round2 } from '../../domain'
 import { dayKey, inPeriod, lastDayKeys, type Period } from '../../domain/time'
 import { formatDate } from '../../lib/format'
 import { requireSupabase } from '../../lib/supabase'
 import { adminUrl } from '../base'
-import { fetchAdminOrders, fetchAdminProducts, fetchAdminQuotes, fetchExpenses, fetchSaleMovements, fetchSettings, grossProfitOf } from '../remote/repo'
+import { fetchAdminCategories, fetchAdminOrders, fetchAdminProducts, fetchAdminQuotes, fetchExpenses, fetchSaleMovements, fetchSettings, fetchTraders, grossProfitOf } from '../remote/repo'
 import { useRemote } from '../remote/useRemote'
-import { fmt, ORDER_STATUS, orderTone, PageHead, Pill, QUOTE_STATUS, quoteTone } from '../ui'
+import { fmt, ORDER_STATUS, orderTone, Pill, QUOTE_STATUS, quoteTone } from '../ui'
 
 type Range = '7' | '30' | 'all'
+
+/** Launch goals shown as rings. Change the targets here. */
+const GOALS = { photos: 30, live: 30, traders: 30, activeTraders: 10 }
+
+interface Task { id: string; text: string; done: boolean }
+const TASKS_KEY = 'awani_admin_tasks_v1'
+const SEED_TASKS: Task[] = [
+  { id: 's1', text: 'Photographier les produits essentiels', done: false },
+  { id: 's2', text: 'Ajouter les photos dans Produits & stock', done: false },
+  { id: 's3', text: 'Appeler les 10 premiers commerçants (rang A)', done: false },
+  { id: 's4', text: 'Imprimer les cartes de fidélité (7 cases)', done: false },
+  { id: 's5', text: 'Acheter le nom de domaine .com et le relier à Vercel', done: false },
+]
+function loadTasks(): Task[] {
+  try {
+    const raw = localStorage.getItem(TASKS_KEY)
+    if (raw) {
+      const v = JSON.parse(raw) as unknown
+      if (Array.isArray(v)) return v.filter((t): t is Task => !!t && typeof (t as Task).id === 'string' && typeof (t as Task).text === 'string').map((t) => ({ id: t.id, text: t.text, done: t.done === true }))
+    }
+  } catch { /* storage unavailable: fall back to the starter list */ }
+  return SEED_TASKS
+}
+function saveTasks(t: Task[]) {
+  try { localStorage.setItem(TASKS_KEY, JSON.stringify(t)) } catch { /* private mode: tasks stay in memory only */ }
+}
+
+function Ring({ value, goal, label, hint, to }: { value: number; goal: number; label: string; hint: string; to: string }) {
+  const pct = goal <= 0 ? 0 : Math.min(100, Math.round((value / goal) * 100))
+  const R = 34
+  const C = 2 * Math.PI * R
+  return (
+    <Link to={to} className="g-ring" aria-label={`${label}: ${value} sur ${goal}`}>
+      <svg viewBox="0 0 80 80" width="84" height="84" aria-hidden="true">
+        <circle cx="40" cy="40" r={R} className="g-ring__bg" />
+        <circle cx="40" cy="40" r={R} className="g-ring__fg" strokeDasharray={`${(C * pct) / 100} ${C}`} transform="rotate(-90 40 40)" />
+        <text x="40" y="45" textAnchor="middle" className="g-ring__txt">{pct}%</text>
+      </svg>
+      <strong>{label}</strong>
+      <small>{value} / {goal}</small>
+      <em>{hint}</em>
+    </Link>
+  )
+}
+
+function greeting(): string {
+  const h = new Date().getHours()
+  return h < 5 ? 'Bonsoir' : h < 18 ? 'Bonjour' : 'Bonsoir'
+}
+
+function MyTasks() {
+  const [tasks, setTasks] = useState<Task[]>(loadTasks)
+  const [text, setText] = useState('')
+  useEffect(() => saveTasks(tasks), [tasks])
+  const add = (e: FormEvent) => {
+    e.preventDefault()
+    const t = text.trim()
+    if (!t) return
+    setTasks((cur) => [...cur, { id: `t${Date.now()}`, text: t, done: false }])
+    setText('')
+  }
+  const left = tasks.filter((t) => !t.done).length
+  return (
+    <section className="card g-card">
+      <div className="g-card__head">
+        <h2>Mes tâches</h2>
+        <span className="g-chip">{left} à faire</span>
+      </div>
+      <ul className="g-tasks">
+        {tasks.map((t) => (
+          <li key={t.id} className={t.done ? 'is-done' : ''}>
+            <label>
+              <input type="checkbox" checked={t.done} onChange={() => setTasks((cur) => cur.map((x) => (x.id === t.id ? { ...x, done: !x.done } : x)))} />
+              <span>{t.text}</span>
+            </label>
+            <button type="button" className="g-x" aria-label={`Supprimer la tâche ${t.text}`} onClick={() => setTasks((cur) => cur.filter((x) => x.id !== t.id))}>×</button>
+          </li>
+        ))}
+        {tasks.length === 0 && <li className="muted">Aucune tâche. Ajoutez la première ci-dessous.</li>}
+      </ul>
+      <form className="g-add" onSubmit={add}>
+        <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Nouvelle tâche…" aria-label="Nouvelle tâche" maxLength={140} />
+        <button type="submit" className="btn btn--primary btn--sm" disabled={!text.trim()}>Ajouter</button>
+      </form>
+      <small className="muted">Enregistrées sur cet appareil uniquement.</small>
+    </section>
+  )
+}
 
 /** Overview computed from Supabase (orders, quotes, stock, stock ledger, expenses). Refreshes every minute. */
 export default function RemoteDashboard() {
@@ -18,6 +106,8 @@ export default function RemoteDashboard() {
   const products = useRemote(() => fetchAdminProducts(requireSupabase()), 60000)
   const settings = useRemote(() => fetchSettings(requireSupabase()))
   const movements = useRemote(() => fetchSaleMovements(requireSupabase()), 60000)
+  const categories = useRemote(() => fetchAdminCategories(requireSupabase()), 120000)
+  const traders = useRemote(() => fetchTraders(requireSupabase()), 120000)
   const expenses = useRemote(() => fetchExpenses(requireSupabase()), 60000) // owner/admin only: staff simply see « Données insuffisantes »
   const [range, setRange] = useState<Range>('30')
   const err = orders.error || quotes.error || products.error
@@ -42,7 +132,17 @@ export default function RemoteDashboard() {
       quotes: qs.filter((x) => dayKey(x.createdAt) === k).length,
       label: new Date(`${k}T12:00:00Z`).toLocaleDateString('fr-FR', { weekday: 'short', timeZone: 'UTC' }),
     }))
+    const cats = categories.data ?? []
+    const trs = traders.data ?? []
+    const today = dayKey(new Date())
     return {
+      withPhoto: ps.filter((p) => p.image).length,
+      liveCount: ps.filter((p) => p.active).length,
+      catActive: cats.filter((c) => c.active).length,
+      catTotal: cats.length,
+      traderCount: trs.length,
+      traderActive: trs.filter((t) => t.status === 'active').length,
+      followUps: trs.filter((t) => t.status !== 'inactive' && t.followUpDate && t.followUpDate <= today).length,
       newCount: count('new'),
       newValue: valueOf('new'),
       openCount: count('confirmed') + count('shipped'),
@@ -61,16 +161,50 @@ export default function RemoteDashboard() {
       recentOrders: os.slice(0, 5),
       recentQuotes: qs.slice(0, 5),
     }
-  }, [orders.data, quotes.data, products.data, settings.data, movements.data, expenses.data, range])
+  }, [orders.data, quotes.data, products.data, settings.data, movements.data, expenses.data, categories.data, traders.data, range])
 
   const max = Math.max(1, ...stats.days.map((d) => Math.max(d.orders, d.quotes)))
   const loading = (orders.loading && !orders.data) || (products.loading && !products.data)
 
   return (
     <>
-      <PageHead title="Vue d'ensemble" subtitle="Activité de la boutique, calculée depuis Supabase." />
+      <header className="g-hero">
+        <div>
+          <p className="g-hero__date">{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+          <h1>{greeting()} 👋</h1>
+          <p className="muted">Voici où en est le lancement de votre boutique.</p>
+        </div>
+        <div className="g-hero__actions">
+          <Link to={adminUrl('produits')} className="btn btn--primary btn--sm">+ Produit</Link>
+          <Link to={adminUrl('commercants')} className="btn btn--ghost btn--sm">Commerçants</Link>
+          <Link to={adminUrl('commandes')} className="btn btn--ghost btn--sm">Commandes</Link>
+        </div>
+      </header>
       {err && <div className="alert alert--bad" role="alert">{err}</div>}
       {loading && !err && <p className="muted">Chargement…</p>}
+
+      <section className="g-goals" aria-label="Objectifs de lancement">
+        <Ring value={stats.withPhoto} goal={GOALS.photos} label="Produits photographiés" hint="Ajouter des photos" to={adminUrl('produits')} />
+        <Ring value={stats.liveCount} goal={GOALS.live} label="Produits en ligne" hint="Activer les essentiels" to={adminUrl('produits')} />
+        <Ring value={stats.catActive} goal={Math.max(1, stats.catTotal)} label="Catégories actives" hint="Après les photos" to={adminUrl('categories')} />
+        <Ring value={stats.traderCount} goal={GOALS.traders} label="Commerçants ajoutés" hint="Liste de prospects" to={adminUrl('commercants')} />
+        <Ring value={stats.traderActive} goal={GOALS.activeTraders} label="Commerçants actifs" hint="Premiers clients gros" to={adminUrl('commercants')} />
+      </section>
+
+      <div className="a-cols">
+        <MyTasks />
+        <section className="card g-card">
+          <div className="g-card__head"><h2>À traiter maintenant</h2></div>
+          <ul className="g-todo">
+            <li><Link to={adminUrl('commandes')}><span>Nouvelles demandes de commande</span><b>{stats.newCount}</b></Link></li>
+            <li><Link to={adminUrl('devis')}><span>Demandes de devis à traiter</span><b>{stats.newQuotes}</b></Link></li>
+            <li><Link to={adminUrl('commercants')}><span>Commerçants à relancer aujourd’hui</span><b>{stats.followUps}</b></Link></li>
+            <li><Link to={adminUrl('produits')}><span>Alertes de stock</span><b>{stats.low.length + stats.out.length}</b></Link></li>
+          </ul>
+          {stats.newCount + stats.newQuotes + stats.followUps + stats.low.length + stats.out.length === 0 && <p className="muted">Tout est à jour pour le moment. ✅</p>}
+        </section>
+      </div>
+
       <div className="a-toolbar">
         <label htmlFor="range">Période</label>
         <select id="range" value={range} onChange={(e) => setRange(e.target.value as Range)}>
@@ -121,6 +255,7 @@ export default function RemoteDashboard() {
       <div className="a-cols">
         <section className="card">
           <h2>7 derniers jours</h2>
+          {stats.days.every((d) => d.orders + d.quotes === 0) && <p className="muted g-empty">Pas encore d’activité cette semaine. Les barres apparaîtront avec les premières commandes.</p>}
           <div className="bars" role="img" aria-label="Commandes et demandes de devis par jour">
             {stats.days.map((d) => (
               <div key={d.key} className="bars__col">
