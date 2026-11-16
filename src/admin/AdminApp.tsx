@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { Link, NavLink, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { BrandLogo } from '../components/BrandLogo'
 import { useSettings } from '../state/hooks'
@@ -6,6 +6,7 @@ import { adminLogin, adminLogout, useAdminAuth } from './auth'
 import { SUPABASE_CONFIGURED } from '../data/config'
 import { requireSupabase } from '../lib/supabase'
 import { ADMIN_BASE, adminUrl } from './base'
+import { Modal } from './ui'
 import { countNewOrders, countNewQuotes } from './remote/repo'
 import RemoteBundles from './pages/RemoteBundles'
 import RemoteCustomers from './pages/RemoteCustomers'
@@ -83,11 +84,63 @@ const NAV: { to: string; label: string; end?: boolean }[] = [
   { to: adminUrl('parametres'), label: 'Paramètres' },
 ]
 
+
+const BG_KEY = 'awani_admin_bg_v1'
+const readBg = (): string | null => {
+  try { return localStorage.getItem(BG_KEY) } catch { return null }
+}
+/** Shrinks the chosen picture (max 1400 px, JPEG) so it stays light in storage and fast to paint. */
+function shrinkImage(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      const k = Math.min(1, 1400 / Math.max(img.width, img.height))
+      const c = document.createElement('canvas')
+      c.width = Math.max(1, Math.round(img.width * k))
+      c.height = Math.max(1, Math.round(img.height * k))
+      c.getContext('2d')?.drawImage(img, 0, 0, c.width, c.height)
+      URL.revokeObjectURL(url)
+      resolve(c.toDataURL('image/jpeg', 0.72))
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('image')) }
+    img.src = url
+  })
+}
+
+function BgPicker({ onClose, onChange }: { onClose: () => void; onChange: (v: string | null) => void }) {
+  const [msg, setMsg] = useState('')
+  const pick = async (e: ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    if (!f) return
+    try {
+      const data = await shrinkImage(f)
+      try { localStorage.setItem(BG_KEY, data) } catch { setMsg('Image gardée pour cette session seulement (stockage plein).') }
+      onChange(data)
+      onClose()
+    } catch {
+      setMsg('Image illisible. Essayez un fichier JPG ou PNG.')
+    }
+  }
+  return (
+    <Modal title="Arrière-plan de l’administration" onClose={onClose}>
+      <p className="muted">Choisissez une photo (par exemple votre fond d’écran). Elle apparaît floutée derrière les cartes en verre. Elle reste sur cet appareil.</p>
+      <input type="file" accept="image/*" onChange={pick} aria-label="Choisir une image d’arrière-plan" />
+      {msg && <div className="alert alert--warn" role="status">{msg}</div>}
+      <div className="a-actions">
+        <button type="button" className="btn btn--ghost" onClick={() => { try { localStorage.removeItem(BG_KEY) } catch { /* ignore */ } onChange(null); onClose() }}>Remettre le fond par défaut</button>
+      </div>
+    </Modal>
+  )
+}
+
 function Shell() {
   const s = useSettings()
   const [newOrders, setNewOrders] = useState(0)
   const [newQuotes, setNewQuotes] = useState(0)
   const [open, setOpen] = useState(false)
+  const [bg, setBg] = useState<string | null>(readBg)
+  const [bgOpen, setBgOpen] = useState(false)
   const loc = useLocation()
   useEffect(() => setOpen(false), [loc.pathname])
   useEffect(() => {
@@ -106,7 +159,8 @@ function Shell() {
   const badge = (to: string) => (to.endsWith('commandes') ? newOrders : to.endsWith('devis') ? newQuotes : 0)
 
   return (
-    <div className="a-shell">
+    <div className={bg ? 'a-shell a-shell--img' : 'a-shell'}>
+      {bg && <div className="a-bg" style={{ backgroundImage: `url(${bg})` }} aria-hidden="true" />}
       <header className="a-top">
         <button type="button" className="btn btn--ghost btn--sm a-top__menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           Menu
@@ -133,6 +187,9 @@ function Shell() {
           <Link to="/" className="a-nav">
             ← Voir la boutique
           </Link>
+          <button type="button" className="a-nav a-nav--btn" onClick={() => setBgOpen(true)}>
+            Arrière-plan
+          </button>
           <button type="button" className="a-nav a-nav--btn" onClick={adminLogout}>
             Se déconnecter
           </button>
@@ -141,6 +198,7 @@ function Shell() {
       <main className="a-main">
         <Outlet />
       </main>
+      {bgOpen && <BgPicker onClose={() => setBgOpen(false)} onChange={setBg} />}
     </div>
   )
 }

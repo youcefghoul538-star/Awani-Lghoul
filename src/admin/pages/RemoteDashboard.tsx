@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react'
 import { Link } from 'react-router-dom'
 import { NOT_ENOUGH_DATA, round2 } from '../../domain'
 import { dayKey, inPeriod, lastDayKeys, type Period } from '../../domain/time'
@@ -12,7 +12,7 @@ import { fmt, ORDER_STATUS, orderTone, Pill, QUOTE_STATUS, quoteTone } from '../
 type Range = '7' | '30' | 'all'
 
 /** Launch goals shown as rings. Change the targets here. */
-const GOALS = { photos: 30, live: 30, traders: 30, activeTraders: 10 }
+const GOALS = { photos: 30, live: 30, traders: 30, activeTraders: 10, revenue: 1_000_000 } // revenue: premiers 100 millions de centimes = 1 000 000 DA
 
 interface Task { id: string; text: string; done: boolean }
 const TASKS_KEY = 'awani_admin_tasks_v1'
@@ -42,7 +42,7 @@ function Ring({ value, goal, label, hint, to }: { value: number; goal: number; l
   const R = 34
   const C = 2 * Math.PI * R
   return (
-    <Link to={to} className="g-ring" aria-label={`${label}: ${value} sur ${goal}`}>
+    <Link to={to} className="g-ring" onClick={to.startsWith('#') ? (e) => { e.preventDefault(); document.querySelector(to)?.scrollIntoView({ behavior: 'smooth' }) } : undefined} aria-label={`${label}: ${value} sur ${goal}`}>
       <svg viewBox="0 0 80 80" width="84" height="84" aria-hidden="true">
         <circle cx="40" cy="40" r={R} className="g-ring__bg" />
         <circle cx="40" cy="40" r={R} className="g-ring__fg" strokeDasharray={`${(C * pct) / 100} ${C}`} transform="rotate(-90 40 40)" />
@@ -60,10 +60,8 @@ function greeting(): string {
   return h < 5 ? 'Bonsoir' : h < 18 ? 'Bonjour' : 'Bonsoir'
 }
 
-function MyTasks() {
-  const [tasks, setTasks] = useState<Task[]>(loadTasks)
+function MyTasks({ tasks, setTasks }: { tasks: Task[]; setTasks: Dispatch<SetStateAction<Task[]>> }) {
   const [text, setText] = useState('')
-  useEffect(() => saveTasks(tasks), [tasks])
   const add = (e: FormEvent) => {
     e.preventDefault()
     const t = text.trim()
@@ -73,7 +71,7 @@ function MyTasks() {
   }
   const left = tasks.filter((t) => !t.done).length
   return (
-    <section className="card g-card">
+    <section className="card g-card" id="mes-taches">
       <div className="g-card__head">
         <h2>Mes tâches</h2>
         <span className="g-chip">{left} à faire</span>
@@ -110,6 +108,9 @@ export default function RemoteDashboard() {
   const traders = useRemote(() => fetchTraders(requireSupabase()), 120000)
   const expenses = useRemote(() => fetchExpenses(requireSupabase()), 60000) // owner/admin only: staff simply see « Données insuffisantes »
   const [range, setRange] = useState<Range>('30')
+  const [tasks, setTasks] = useState<Task[]>(loadTasks)
+  useEffect(() => saveTasks(tasks), [tasks])
+  const doneTasks = tasks.filter((t) => t.done).length
   const err = orders.error || quotes.error || products.error
 
   const stats = useMemo(() => {
@@ -136,6 +137,7 @@ export default function RemoteDashboard() {
     const trs = traders.data ?? []
     const today = dayKey(new Date())
     return {
+      salesAll: round2(os.filter((o) => o.status === 'delivered').reduce((a, o) => a + o.total, 0)),
       withPhoto: ps.filter((p) => p.image).length,
       liveCount: ps.filter((p) => p.active).length,
       catActive: cats.filter((c) => c.active).length,
@@ -183,6 +185,21 @@ export default function RemoteDashboard() {
       {err && <div className="alert alert--bad" role="alert">{err}</div>}
       {loading && !err && <p className="muted">Chargement…</p>}
 
+      <section className="g-big" aria-label="Objectifs principaux">
+        <div className="g-big__card">
+          <Ring value={doneTasks} goal={Math.max(1, tasks.length)} label="Objectif : mes tâches" hint={doneTasks >= tasks.length && tasks.length > 0 ? 'Bravo, tout est fait ✅' : 'Cochez vos tâches ci-dessous'} to="#mes-taches" />
+        </div>
+        <div className="g-big__card g-money">
+          <span className="g-money__tag">🎯 Premier objectif</span>
+          <strong className="g-money__title">Les premiers 100 millions de centimes</strong>
+          <p className="g-money__amount"><b>{fmt(Math.min(stats.salesAll, GOALS.revenue))}</b> <span>sur {fmt(GOALS.revenue)}</span></p>
+          <div className="g-bar" role="progressbar" aria-valuemin={0} aria-valuemax={GOALS.revenue} aria-valuenow={Math.min(stats.salesAll, GOALS.revenue)} aria-label="Progression vers 1 000 000 DA de ventes livrées">
+            <i style={{ width: `${Math.min(100, (stats.salesAll / GOALS.revenue) * 100)}%` }} />
+          </div>
+          <small>{stats.salesAll >= GOALS.revenue ? 'Objectif atteint, félicitations !' : `Encore ${fmt(GOALS.revenue - stats.salesAll)} de ventes livrées · ${((stats.salesAll / GOALS.revenue) * 100).toFixed(1)} %`}</small>
+        </div>
+      </section>
+
       <section className="g-goals" aria-label="Objectifs de lancement">
         <Ring value={stats.withPhoto} goal={GOALS.photos} label="Produits photographiés" hint="Ajouter des photos" to={adminUrl('produits')} />
         <Ring value={stats.liveCount} goal={GOALS.live} label="Produits en ligne" hint="Activer les essentiels" to={adminUrl('produits')} />
@@ -192,7 +209,7 @@ export default function RemoteDashboard() {
       </section>
 
       <div className="a-cols">
-        <MyTasks />
+        <MyTasks tasks={tasks} setTasks={setTasks} />
         <section className="card g-card">
           <div className="g-card__head"><h2>À traiter maintenant</h2></div>
           <ul className="g-todo">

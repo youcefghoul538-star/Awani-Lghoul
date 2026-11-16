@@ -702,3 +702,51 @@ a.kpi:hover { transform: translateY(-3px); box-shadow: 0 12px 30px rgba(60, 45, 
 .g-todo a:hover { background: #fff; }
 .g-todo b { background: var(--accent); color: #fff; min-width: 28px; text-align: center; padding: 2px 9px; border-radius: 999px; font-size: 0.82rem; }
 .g-empty { font-size: 0.85rem; margin: 0 0 8px; }
+
+/* main goals */
+.g-big { display: grid; gap: 12px; grid-template-columns: 1fr; margin-bottom: 12px; }
+@media (min-width: 800px) { .g-big { grid-template-columns: 240px 1fr; } }
+.g-big__card .g-ring { height: 100%; }
+.g-money {
+  background: linear-gradient(135deg, rgba(14, 90, 70, 0.95), rgba(184, 72, 15, 0.88));
+  color: #fff;
+  border-radius: 20px;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  justify-content: center;
+  box-shadow: 0 10px 30px rgba(14, 90, 70, 0.28);
+}
+.g-money__tag { font-size: 0.78rem; font-weight: 700; opacity: 0.9; }
+.g-money__title { font-size: 1.15rem; }
+.g-money__amount { margin: 0; font-size: 0.9rem; opacity: 0.95; }
+.g-money__amount b { font-size: 1.7rem; letter-spacing: -0.02em; }
+.g-bar { height: 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.28); overflow: hidden; }
+.g-bar i { display: block; height: 100%; border-radius: 999px; background: #fff; transition: width 0.6s ease; min-width: 4px; }
+.g-money small { opacity: 0.92; }
+
+/* custom wallpaper behind the glass (one fixed, blurred layer: cheap to scroll over) */
+.a-shell--img { background: #2b2118; }
+.a-bg {
+  position: fixed;
+  inset: -40px;
+  z-index: 0;
+  background-size: cover;
+  background-position: center;
+  filter: blur(14px) saturate(1.1);
+  transform: translateZ(0);
+  pointer-events: none;
+}
+.a-shell--img > .a-main { position: relative; z-index: 1; }
+.a-shell--img .a-top, .a-shell--img .a-side { z-index: 2; }
+.a-shell--img .card, .a-shell--img .kpi, .a-shell--img .a-tablewrap, .a-shell--img .g-ring, .a-shell--img .g-hero { background: rgba(255, 255, 255, 0.5); }
+.a-shell--img .a-head h1, .a-shell--img .a-head p, .a-shell--img .a-toolbar label, .a-shell--img .a-toolbar small { color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.45); }
+.modal { z-index: 100; }
+@media (max-width: 700px) {
+  .card, .kpi, .a-tablewrap, .g-ring, .g-hero { backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .card, .kpi, .a-tablewrap, .g-ring, .g-hero, .a-side, .a-top { background: rgba(255, 255, 255, 0.95); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .a-side { background: #1f2622; }
+}
