@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type FormEvent, type SetStateAction } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type Dispatch, type FormEvent, type SetStateAction } from 'react'
 import { Link } from 'react-router-dom'
 import { NOT_ENOUGH_DATA, round2 } from '../../domain'
 import { dayKey, inPeriod, lastDayKeys, type Period } from '../../domain/time'
@@ -37,13 +37,18 @@ function saveTasks(t: Task[]) {
   try { localStorage.setItem(TASKS_KEY, JSON.stringify(t)) } catch { /* private mode: tasks stay in memory only */ }
 }
 
+/** Entrance animations play on the first visit only; coming back to the page is instant. */
+let dashPlayed = false
+const AnimCtx = createContext(true)
+
 /** Counts from 0 to `target` (ease-out). Respects « réduire les animations ». */
 function useCountUp(target: number, ms = 1000): number {
-  const [v, setV] = useState(0)
-  const last = useRef(0)
+  const animate = useContext(AnimCtx)
+  const [v, setV] = useState(animate ? 0 : target)
+  const last = useRef(animate ? 0 : target)
   useEffect(() => {
     if (!Number.isFinite(target)) return
-    if (typeof window === 'undefined' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { last.current = target; setV(target); return }
+    if (typeof window === 'undefined' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches || (!animate && last.current === target)) { last.current = target; setV(target); return }
     let raf = 0
     const start = performance.now()
     const from = last.current
@@ -65,13 +70,15 @@ function Count({ to, format }: { to: number; format?: (n: number) => string }) {
 }
 const rise = (i: number) => ({ '--i': i }) as CSSProperties
 
+
 function Ring({ value, goal, label, hint, to, style }: { value: number; goal: number; label: string; hint: string; to: string; style?: CSSProperties }) {
   const target = goal <= 0 ? 0 : Math.min(100, (value / goal) * 100)
+  const animate = useContext(AnimCtx)
   const pct = useCountUp(target, 1100)
   const R = 34
   const C = 2 * Math.PI * R
   return (
-    <Link to={to} className="g-ring g-in" onClick={to.startsWith('#') ? (e) => { e.preventDefault(); document.querySelector(to)?.scrollIntoView({ behavior: 'smooth' }) } : undefined} style={style} aria-label={`${label}: ${value} sur ${goal}`}>
+    <Link to={to} className={`g-ring${animate ? ' g-in' : ''}`} onClick={to.startsWith('#') ? (e) => { e.preventDefault(); document.querySelector(to)?.scrollIntoView({ behavior: 'smooth' }) } : undefined} style={style} aria-label={`${label}: ${value} sur ${goal}`}>
       <svg viewBox="0 0 80 80" width="84" height="84" aria-hidden="true">
         <circle cx="40" cy="40" r={R} className="g-ring__bg" />
         <circle cx="40" cy="40" r={R} className="g-ring__fg" strokeDasharray={`${(C * pct) / 100} ${C}`} transform="rotate(-90 40 40)" />
@@ -90,6 +97,7 @@ function greeting(): string {
 }
 
 function MyTasks({ tasks, setTasks }: { tasks: Task[]; setTasks: Dispatch<SetStateAction<Task[]>> }) {
+  const animate = useContext(AnimCtx)
   const [text, setText] = useState('')
   const add = (e: FormEvent) => {
     e.preventDefault()
@@ -100,7 +108,7 @@ function MyTasks({ tasks, setTasks }: { tasks: Task[]; setTasks: Dispatch<SetSta
   }
   const left = tasks.filter((t) => !t.done).length
   return (
-    <section className="card g-card g-in" id="mes-taches" style={rise(8)}>
+    <section className={`card g-card${animate ? ' g-in' : ''}`} id="mes-taches" style={rise(8)}>
       <div className="g-card__head">
         <h2>Mes tâches</h2>
         <span className="g-chip">{left} à faire</span>
@@ -137,6 +145,11 @@ export default function RemoteDashboard() {
   const traders = useRemote(() => fetchTraders(requireSupabase()), 120000)
   const expenses = useRemote(() => fetchExpenses(requireSupabase()), 60000) // owner/admin only: staff simply see « Données insuffisantes »
   const [range, setRange] = useState<Range>('30')
+  const [animate] = useState(() => !dashPlayed)
+  useEffect(() => {
+    const id = window.setTimeout(() => { dashPlayed = true }, 1500)
+    return () => window.clearTimeout(id)
+  }, [])
   const [tasks, setTasks] = useState<Task[]>(loadTasks)
   useEffect(() => saveTasks(tasks), [tasks])
   const doneTasks = tasks.filter((t) => t.done).length
@@ -198,8 +211,8 @@ export default function RemoteDashboard() {
   const loading = (orders.loading && !orders.data) || (products.loading && !products.data)
 
   return (
-    <>
-      <header className="g-hero g-in" style={rise(0)}>
+    <AnimCtx.Provider value={animate}>
+      <header className={`g-hero${animate ? ' g-in' : ''}`} style={rise(0)}>
         <div>
           <p className="g-hero__date">{new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
           <h1>{greeting()} 👋</h1>
@@ -218,7 +231,7 @@ export default function RemoteDashboard() {
         <div className="g-big__card">
           <Ring style={rise(3)} value={doneTasks} goal={Math.max(1, tasks.length)} label="Objectif : mes tâches" hint={doneTasks >= tasks.length && tasks.length > 0 ? 'Bravo, tout est fait ✅' : 'Cochez vos tâches ci-dessous'} to="#mes-taches" />
         </div>
-        <div className="g-big__card g-money g-in" style={rise(2)}>
+        <div className={`g-big__card g-money${animate ? ' g-in' : ''}`} style={rise(2)}>
           <span className="g-money__tag">🎯 Premier objectif</span>
           <strong className="g-money__title">Les premiers 100 millions de centimes</strong>
           <p className="g-money__amount"><b><Count to={Math.min(stats.salesAll, GOALS.revenue)} format={fmt} /></b> <span>sur {fmt(GOALS.revenue)}</span></p>
@@ -239,7 +252,7 @@ export default function RemoteDashboard() {
 
       <div className="a-cols">
         <MyTasks tasks={tasks} setTasks={setTasks} />
-        <section className="card g-card g-in" style={rise(9)}>
+        <section className={`card g-card${animate ? ' g-in' : ''}`} style={rise(9)}>
           <div className="g-card__head"><h2>À traiter maintenant</h2></div>
           <ul className="g-todo">
             <li><Link to={adminUrl('commandes')}><span>Nouvelles demandes de commande</span><b>{stats.newCount}</b></Link></li>
@@ -261,37 +274,37 @@ export default function RemoteDashboard() {
         <small className="muted">Jours calculés en heure d’Alger · 300 dernières commandes prises en compte.</small>
       </div>
       <div className="kpis">
-        <Link to={adminUrl('commandes')} className="kpi g-in" style={rise(10)}>
+        <Link to={adminUrl('commandes')} className={`kpi${animate ? ' g-in' : ''}`} style={rise(10)}>
           <span>Demandes à confirmer</span>
           <strong><Count to={stats.newCount} /></strong>
           <small>{fmt(stats.newValue)} · stock non déduit tant qu’elles ne sont pas confirmées</small>
         </Link>
-        <div className="kpi g-in" style={rise(11)}>
+        <div className={`kpi${animate ? ' g-in' : ''}`} style={rise(11)}>
           <span>Commandes confirmées / expédiées</span>
           <strong><Count to={stats.openCount} /></strong>
           <small>{fmt(stats.openValue)} · {stats.cancelled} annulée(s)</small>
         </div>
-        <div className="kpi g-in" style={rise(12)}>
+        <div className={`kpi${animate ? ' g-in' : ''}`} style={rise(12)}>
           <span>Ventes livrées</span>
           <strong><Count to={stats.sales} format={fmt} /></strong>
           <small>{stats.deliveredCount} commande(s) livrée(s)</small>
         </div>
-        <div className="kpi g-in" style={rise(13)}>
+        <div className={`kpi${animate ? ' g-in' : ''}`} style={rise(13)}>
           <span>Marge brute</span>
           <strong>{stats.gp == null ? NOT_ENOUGH_DATA : <Count to={stats.gp} format={fmt} />}</strong>
           <small>{stats.gp == null ? 'coûts d’achat manquants (réceptionnez vos achats)' : stats.margin == null ? '' : `${stats.margin.toFixed(1)} % des ventes`} · avant charges</small>
         </div>
-        <div className="kpi g-in" style={rise(14)}>
+        <div className={`kpi${animate ? ' g-in' : ''}`} style={rise(14)}>
           <span>Bénéfice net</span>
           <strong>{stats.net == null ? NOT_ENOUGH_DATA : <Count to={stats.net} format={fmt} />}</strong>
           <small>{stats.net == null ? 'marge brute ou charges manquantes' : 'marge brute − charges saisies'}</small>
         </div>
-        <Link to={adminUrl('devis')} className="kpi kpi--ws g-in" style={rise(15)}>
+        <Link to={adminUrl('devis')} className={`kpi kpi--ws${animate ? ' g-in' : ''}`} style={rise(15)}>
           <span>Demandes de devis</span>
           <strong><Count to={stats.totalQuotes} /></strong>
           <small>{stats.newQuotes} à traiter</small>
         </Link>
-        <Link to={adminUrl('produits')} className="kpi g-in" style={rise(16)}>
+        <Link to={adminUrl('produits')} className={`kpi${animate ? ' g-in' : ''}`} style={rise(16)}>
           <span>Alertes stock</span>
           <strong><Count to={stats.low.length + stats.out.length} /></strong>
           <small>{stats.out.length} rupture(s) · {stats.low.length} faible(s)</small>
@@ -367,6 +380,6 @@ export default function RemoteDashboard() {
           )}
         </section>
       </div>
-    </>
+    </AnimCtx.Provider>
   )
 }

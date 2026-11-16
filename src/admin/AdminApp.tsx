@@ -196,7 +196,9 @@ function Shell() {
         </div>
       </aside>
       <main className="a-main">
-        <Outlet />
+        <div key={loc.pathname} className="a-page">
+          <Outlet />
+        </div>
       </main>
       {bgOpen && <BgPicker onClose={() => setBgOpen(false)} onChange={setBg} />}
     </div>

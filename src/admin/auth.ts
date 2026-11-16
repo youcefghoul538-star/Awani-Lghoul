@@ -1,3 +1,4 @@
+import { clearRemoteCache } from './remote/useRemote'
 import { useSyncExternalStore } from 'react'
 import type { AuthChangeEvent, Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
@@ -64,6 +65,7 @@ export async function adminLogin(email: string, password: string): Promise<{ ok:
 }
 
 export async function adminLogout(): Promise<void> {
+  clearRemoteCache()
   if (supabase) await supabase.auth.signOut()
   publish({ ready: true, authenticated: false, role: null })
 }
