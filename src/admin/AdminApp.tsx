@@ -1,5 +1,5 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
-import { Link, NavLink, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { Link, NavLink, Navigate, Route, Routes, useLocation, useOutlet } from 'react-router-dom'
 import { BrandLogo } from '../components/BrandLogo'
 import { useSettings } from '../state/hooks'
 import { adminLogin, adminLogout, useAdminAuth } from './auth'
@@ -7,6 +7,7 @@ import { SUPABASE_CONFIGURED } from '../data/config'
 import { requireSupabase } from '../lib/supabase'
 import { ADMIN_BASE, adminUrl } from './base'
 import { Modal } from './ui'
+import { Icon, type IconName } from './Icons'
 import { countNewOrders, countNewQuotes } from './remote/repo'
 import RemoteBundles from './pages/RemoteBundles'
 import RemoteCustomers from './pages/RemoteCustomers'
@@ -70,18 +71,18 @@ function Login() {
   )
 }
 
-const NAV: { to: string; label: string; end?: boolean }[] = [
-  { to: adminUrl(), label: "Vue d'ensemble", end: true },
-  { to: adminUrl('commandes'), label: 'Commandes détail' },
-  { to: adminUrl('produits'), label: 'Produits & stock' },
-  { to: adminUrl('categories'), label: 'Catégories' },
-  { to: adminUrl('devis'), label: 'Demandes de devis (gros)' },
-  { to: adminUrl('achats'), label: 'Achats & charges' },
-  { to: adminUrl('packs'), label: 'Packs' },
-  { to: adminUrl('prix-gros'), label: 'Prix de gros (privé)' },
-  { to: adminUrl('clients'), label: 'Clients' },
-  { to: adminUrl('commercants'), label: 'Commerçants (gros)' },
-  { to: adminUrl('parametres'), label: 'Paramètres' },
+const NAV: { to: string; label: string; icon: IconName; end?: boolean }[] = [
+  { to: adminUrl(), label: "Vue d'ensemble", icon: 'dashboard', end: true },
+  { to: adminUrl('commandes'), label: 'Commandes détail', icon: 'orders' },
+  { to: adminUrl('produits'), label: 'Produits & stock', icon: 'products' },
+  { to: adminUrl('categories'), label: 'Catégories', icon: 'categories' },
+  { to: adminUrl('devis'), label: 'Demandes de devis (gros)', icon: 'quotes' },
+  { to: adminUrl('achats'), label: 'Achats & charges', icon: 'purchases' },
+  { to: adminUrl('packs'), label: 'Packs', icon: 'packs' },
+  { to: adminUrl('prix-gros'), label: 'Prix de gros (privé)', icon: 'lock' },
+  { to: adminUrl('clients'), label: 'Clients', icon: 'users' },
+  { to: adminUrl('commercants'), label: 'Commerçants (gros)', icon: 'traders' },
+  { to: adminUrl('parametres'), label: 'Paramètres', icon: 'settings' },
 ]
 
 
@@ -134,6 +135,39 @@ function BgPicker({ onClose, onChange }: { onClose: () => void; onChange: (v: st
   )
 }
 
+/** Fade/blur out the current page, then fade the next one in. Content stays mounted while it fades out. */
+function PageTransition() {
+  const loc = useLocation()
+  const outlet = useOutlet()
+  const latest = useRef(outlet)
+  useEffect(() => {
+    latest.current = outlet
+  })
+  const [shown, setShown] = useState({ key: loc.pathname, el: outlet })
+  const [out, setOut] = useState(false)
+  useEffect(() => {
+    if (loc.pathname === shown.key) return
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    if (reduce) {
+      setShown({ key: loc.pathname, el: latest.current })
+      return
+    }
+    setOut(true)
+    const id = window.setTimeout(() => {
+      setShown({ key: loc.pathname, el: latest.current })
+      setOut(false)
+      window.scrollTo({ top: 0 })
+    }, 320)
+    return () => window.clearTimeout(id)
+  }, [loc.pathname, shown.key])
+  const live = !out && shown.key === loc.pathname
+  return (
+    <div key={shown.key} className={out ? 'a-page a-page--out' : 'a-page'}>
+      {live ? outlet : shown.el}
+    </div>
+  )
+}
+
 function Shell() {
   const s = useSettings()
   const [newOrders, setNewOrders] = useState(0)
@@ -178,27 +212,29 @@ function Shell() {
         <nav aria-label="Administration">
           {NAV.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => (isActive ? 'a-nav a-nav--on' : 'a-nav')}>
-              {n.label}
+              <span className="a-nav__ico"><Icon name={n.icon} /></span>
+              <span className="a-nav__txt">{n.label}</span>
               {badge(n.to) > 0 && <b className="a-nav__badge">{badge(n.to)}</b>}
             </NavLink>
           ))}
         </nav>
         <div className="a-side__foot">
           <Link to="/" className="a-nav">
-            ← Voir la boutique
+            <span className="a-nav__ico"><Icon name="shop" /></span>
+            <span className="a-nav__txt">Voir la boutique</span>
           </Link>
           <button type="button" className="a-nav a-nav--btn" onClick={() => setBgOpen(true)}>
-            Arrière-plan
+            <span className="a-nav__ico"><Icon name="image" /></span>
+            <span className="a-nav__txt">Arrière-plan</span>
           </button>
           <button type="button" className="a-nav a-nav--btn" onClick={adminLogout}>
-            Se déconnecter
+            <span className="a-nav__ico"><Icon name="logout" /></span>
+            <span className="a-nav__txt">Se déconnecter</span>
           </button>
         </div>
       </aside>
       <main className="a-main">
-        <div key={loc.pathname} className="a-page">
-          <Outlet />
-        </div>
+        <PageTransition />
       </main>
       {bgOpen && <BgPicker onClose={() => setBgOpen(false)} onChange={setBg} />}
     </div>
@@ -216,6 +252,10 @@ export default function AdminApp() {
     const title = document.title
     document.title = 'Administration'
     // installable app: manifest + service worker live inside the secret path (see vite.config.ts)
+    const font = document.createElement('link')
+    font.rel = 'stylesheet'
+    font.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap'
+    document.head.appendChild(font)
     const manifest = document.createElement('link')
     manifest.rel = 'manifest'
     manifest.href = `${ADMIN_BASE}/manifest.webmanifest`
@@ -231,6 +271,7 @@ export default function AdminApp() {
       meta.remove()
       manifest.remove()
       touch.remove()
+      font.remove()
       document.title = title
     }
   }, [])

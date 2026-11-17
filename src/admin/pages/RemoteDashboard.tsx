@@ -12,7 +12,7 @@ import { fmt, ORDER_STATUS, orderTone, Pill, QUOTE_STATUS, quoteTone } from '../
 type Range = '7' | '30' | 'all'
 
 /** Launch goals shown as rings. Change the targets here. */
-const GOALS = { photos: 30, live: 30, traders: 30, activeTraders: 10, revenue: 1_000_000 } // revenue: premiers 100 millions de centimes = 1 000 000 DA
+const GOALS = { photos: 30, live: 30, traders: 30, activeTraders: 10, profit: 1_000_000 } // profit: premiers 100 millions de centimes de BÉNÉFICE NET = 1 000 000 DA
 
 interface Task { id: string; text: string; done: boolean }
 const TASKS_KEY = 'awani_admin_tasks_v1'
@@ -42,7 +42,7 @@ let dashPlayed = false
 const AnimCtx = createContext(true)
 
 /** Counts from 0 to `target` (ease-out). Respects « réduire les animations ». */
-function useCountUp(target: number, ms = 1000): number {
+function useCountUp(target: number, ms = 1400): number {
   const animate = useContext(AnimCtx)
   const [v, setV] = useState(animate ? 0 : target)
   const last = useRef(animate ? 0 : target)
@@ -74,7 +74,7 @@ const rise = (i: number) => ({ '--i': i }) as CSSProperties
 function Ring({ value, goal, label, hint, to, style }: { value: number; goal: number; label: string; hint: string; to: string; style?: CSSProperties }) {
   const target = goal <= 0 ? 0 : Math.min(100, (value / goal) * 100)
   const animate = useContext(AnimCtx)
-  const pct = useCountUp(target, 1100)
+  const pct = useCountUp(target, 1500)
   const R = 34
   const C = 2 * Math.PI * R
   return (
@@ -180,6 +180,11 @@ export default function RemoteDashboard() {
     const today = dayKey(new Date())
     return {
       salesAll: round2(os.filter((o) => o.status === 'delivered').reduce((a, o) => a + o.total, 0)),
+      netAll: (() => {
+        const gpAll = grossProfitOf(os.filter((o) => o.status === 'delivered'), movements.data ?? [])
+        const exs = expenses.data ?? []
+        return gpAll != null && exs.length ? round2(gpAll - exs.reduce((a, e) => a + e.amount, 0)) : null
+      })(),
       withPhoto: ps.filter((p) => p.image).length,
       liveCount: ps.filter((p) => p.active).length,
       catActive: cats.filter((c) => c.active).length,
@@ -232,13 +237,23 @@ export default function RemoteDashboard() {
           <Ring style={rise(3)} value={doneTasks} goal={Math.max(1, tasks.length)} label="Objectif : mes tâches" hint={doneTasks >= tasks.length && tasks.length > 0 ? 'Bravo, tout est fait ✅' : 'Cochez vos tâches ci-dessous'} to="#mes-taches" />
         </div>
         <div className={`g-big__card g-money${animate ? ' g-in' : ''}`} style={rise(2)}>
-          <span className="g-money__tag">🎯 Premier objectif</span>
+          <span className="g-money__tag">🎯 Premier objectif · bénéfice net</span>
           <strong className="g-money__title">Les premiers 100 millions de centimes</strong>
-          <p className="g-money__amount"><b><Count to={Math.min(stats.salesAll, GOALS.revenue)} format={fmt} /></b> <span>sur {fmt(GOALS.revenue)}</span></p>
-          <div className="g-bar" role="progressbar" aria-valuemin={0} aria-valuemax={GOALS.revenue} aria-valuenow={Math.min(stats.salesAll, GOALS.revenue)} aria-label="Progression vers 1 000 000 DA de ventes livrées">
-            <i style={{ width: `${Math.min(100, (stats.salesAll / GOALS.revenue) * 100)}%` }} className="g-bar__fill" />
-          </div>
-          <small>{stats.salesAll >= GOALS.revenue ? 'Objectif atteint, félicitations !' : `Encore ${fmt(GOALS.revenue - stats.salesAll)} de ventes livrées · ${((stats.salesAll / GOALS.revenue) * 100).toFixed(1)} %`}</small>
+          {stats.netAll == null ? (
+            <>
+              <p className="g-money__amount"><b>{NOT_ENOUGH_DATA}</b> <span>objectif {fmt(GOALS.profit)}</span></p>
+              <div className="g-bar" aria-hidden="true"><i style={{ width: '0%' }} /></div>
+              <small>Réceptionnez vos achats (coûts) et saisissez vos charges pour suivre le bénéfice net réel. Ventes livrées : {fmt(stats.salesAll)}.</small>
+            </>
+          ) : (
+            <>
+              <p className="g-money__amount"><b><Count to={Math.max(0, Math.min(stats.netAll, GOALS.profit))} format={fmt} /></b> <span>sur {fmt(GOALS.profit)}</span></p>
+              <div className="g-bar" role="progressbar" aria-valuemin={0} aria-valuemax={GOALS.profit} aria-valuenow={Math.max(0, Math.min(stats.netAll, GOALS.profit))} aria-label="Progression vers 1 000 000 DA de bénéfice net">
+                <i style={{ width: `${Math.max(0, Math.min(100, (stats.netAll / GOALS.profit) * 100))}%` }} className="g-bar__fill" />
+              </div>
+              <small>{stats.netAll >= GOALS.profit ? 'Objectif atteint, félicitations !' : `Encore ${fmt(GOALS.profit - stats.netAll)} de bénéfice net · ${Math.max(0, (stats.netAll / GOALS.profit) * 100).toFixed(1)} %`}</small>
+            </>
+          )}
         </div>
       </section>
 
